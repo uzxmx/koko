@@ -38,8 +38,6 @@ github.com/gorilla/websocket v1.4.0 h1:WDFjx/TMzVgy9VdMMQi2K2Emtwi2QcUQsztZ/zLaH
 github.com/gorilla/websocket v1.4.0/go.mod h1:E7qHFY5m1UJ88s3WnNqhKjPHQ0heANvMoAMk2YaljkQ=
 github.com/ibuler/crypto v0.0.0-20190715092645-911d13b3bf6e h1:QnLvABxtQH9BFja0P/wEjeTPABqvvwIz+to52VNn170=
 github.com/ibuler/crypto v0.0.0-20190715092645-911d13b3bf6e/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
-github.com/ibuler/ssh v0.1.6-0.20191022095544-d805cc9f27a8 h1:Br1T3nFmpluX1JiNQYHZeo5fkMvRursag5EHCmnn9+U=
-github.com/ibuler/ssh v0.1.6-0.20191022095544-d805cc9f27a8/go.mod h1:OC6P2JzT5kNhTLlU1N+zEw9Nxj+23dj/OhE72g8JyD8=
 github.com/iris-contrib/go.uuid v2.0.0+incompatible h1:XZubAYg61/JwnJNbZilGjf3b3pB80+OQg2qf6c8BfWE=
 github.com/iris-contrib/go.uuid v2.0.0+incompatible/go.mod h1:iz2lgM/1UnEf1kP0L/+fafWORmlnuysV2EMP8MW+qe0=
 github.com/jarcoal/httpmock v1.0.4 h1:jp+dy/+nonJE4g4xbVtl9QdrUNbn6/3hDT5R4nDIZnA=
@@ -83,6 +81,8 @@ github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
 github.com/stretchr/testify v1.4.0 h1:2E4SXV/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJyk=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
+github.com/uzxmx/ssh v0.1.6-0.20191024033516-c1b9d91b9a32 h1:UJkeJmz+wKT5C90ffJn+Yd/+qOL+PdSqAlUySVpSF1U=
+github.com/uzxmx/ssh v0.1.6-0.20191024033516-c1b9d91b9a32/go.mod h1:DkrYweGL4PanngHvOv7X3dqY4uUcbqE4vTjjbD5NhH4=
 github.com/xlab/treeprint v0.0.0-20181112141820-a009c3971eca h1:1CFlNzQhALwjS9mBAUkycX616GzgsuYUOCHA5+HSlXI=
 github.com/xlab/treeprint v0.0.0-20181112141820-a009c3971eca/go.mod h1:ce1O1j6UtZfjr22oyGxGLbauSBp2YVXpARAosm7dHBg=
 golang.org/x/crypto v0.0.0-20181203042331-505ab145d0a9/go.mod h1:6SG95UA2DQfeDnfUPMdvaQW0Q7yPrPDi9nlGo2tz2b4=

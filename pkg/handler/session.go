@@ -22,34 +22,55 @@ import (
 )
 
 func SessionHandler(sess ssh.Session) {
-	pty, _, ok := sess.Pty()
+	options := parseSessionEnvironment(sess)
+	interactive := true
+	value, ok := options["Interactive"]
 	if ok {
-		ctx, cancel := cctx.NewContext(sess)
-		defer cancel()
-		handler := newInteractiveHandler(sess, ctx.User())
+		interactive = value != "no"
+	}
+
+	var pty ssh.Pty
+	if interactive {
+		pty, _, ok = sess.Pty()
+		if !ok {
+			utils.IgnoreErrWriteString(sess, "Pty must be requested for interactive mode")
+			return
+		}
+	}
+
+	ctx, cancel := cctx.NewContext(sess)
+	defer cancel()
+	handler := newHandler(sess, ctx.User(), interactive)
+
+	if interactive {
 		logger.Infof("Request %s: User %s request pty %s", handler.sess.ID(), sess.User(), pty.Term)
-		handler.Dispatch(ctx)
+		handler.DispatchInteractive(ctx)
 	} else {
-		utils.IgnoreErrWriteString(sess, "No PTY requested.\n")
-		return
+		logger.Infof("Request %s: User %s doesn't request pty", handler.sess.ID(), sess.User())
+		asset, su := getAssetAndSystemUserForNoInteractiveMode(sess, ctx.User(), options)
+		handler.DispatchNonInteractive(ctx, asset, su)
 	}
 }
 
-func newInteractiveHandler(sess ssh.Session, user *model.User) *interactiveHandler {
-	wrapperSess := NewWrapperSession(sess)
-	term := utils.NewTerminal(wrapperSess, "Opt> ")
-	handler := &interactiveHandler{
-		sess: wrapperSess,
-		user: user,
-		term: term,
+func newHandler(sess ssh.Session, user *model.User, interactive bool) *handler {
+	wrapperSess := NewWrapperSession(sess, interactive)
+	handler := &handler{
+		sess:        wrapperSess,
+		user:        user,
+		interactive: interactive,
+	}
+	if interactive {
+		handler.term = utils.NewTerminal(wrapperSess, "Opt> ")
 	}
 	handler.Initial()
 	return handler
 }
 
-type interactiveHandler struct {
-	sess         *WrapperSession
-	user         *model.User
+type handler struct {
+	sess        *WrapperSession
+	user        *model.User
+	interactive bool
+
 	term         *utils.Terminal
 	winWatchChan chan bool
 
@@ -67,15 +88,17 @@ type interactiveHandler struct {
 	assetLoadPolicy string
 }
 
-func (h *interactiveHandler) Initial() {
+func (h *handler) Initial() {
 	h.assetLoadPolicy = strings.ToLower(config.GetConf().AssetLoadPolicy)
-	h.displayBanner()
-	h.winWatchChan = make(chan bool)
+	if h.interactive {
+		h.displayBanner()
+		h.winWatchChan = make(chan bool)
+	}
 	h.loadDataDone = make(chan struct{})
 	go h.firstLoadData()
 }
 
-func (h *interactiveHandler) firstLoadData() {
+func (h *handler) firstLoadData() {
 	h.loadUserNodes("1")
 	switch h.assetLoadPolicy {
 	case "all":
@@ -84,11 +107,11 @@ func (h *interactiveHandler) firstLoadData() {
 	close(h.loadDataDone)
 }
 
-func (h *interactiveHandler) displayBanner() {
+func (h *handler) displayBanner() {
 	displayBanner(h.sess, h.user.Name)
 }
 
-func (h *interactiveHandler) watchWinSizeChange() {
+func (h *handler) watchWinSizeChange() {
 	sessChan := h.sess.WinCh()
 	winChan := sessChan
 	defer logger.Infof("Request %s: Windows change watch close", h.sess.Uuid)
@@ -116,17 +139,18 @@ func (h *interactiveHandler) watchWinSizeChange() {
 	}
 }
 
-func (h *interactiveHandler) pauseWatchWinSize() {
+func (h *handler) pauseWatchWinSize() {
 	h.winWatchChan <- false
 }
 
-func (h *interactiveHandler) resumeWatchWinSize() {
+func (h *handler) resumeWatchWinSize() {
 	h.winWatchChan <- true
 }
 
-func (h *interactiveHandler) Dispatch(ctx cctx.Context) {
+func (h *handler) DispatchInteractive(ctx cctx.Context) {
 	go h.watchWinSizeChange()
 	defer logger.Infof("Request %s: User %s stop interactive", h.sess.ID(), h.user.Name)
+
 	for {
 		line, err := h.term.ReadLine()
 		if err != nil {
@@ -179,7 +203,14 @@ func (h *interactiveHandler) Dispatch(ctx cctx.Context) {
 	}
 }
 
-func (h *interactiveHandler) displayAllAssets() {
+func (h *handler) DispatchNonInteractive(ctx cctx.Context, asset *model.Asset, su *model.SystemUser) {
+	h.assetSelect = asset
+	h.systemUserSelect = su
+	defer logger.Infof("Request %s: User %s stopped", h.sess.ID(), h.user.Name)
+	h.Proxy(context.Background())
+}
+
+func (h *handler) displayAllAssets() {
 	switch h.assetLoadPolicy {
 	case "all":
 		<-h.loadDataDone
@@ -196,7 +227,7 @@ func (h *interactiveHandler) displayAllAssets() {
 	}
 }
 
-func (h *interactiveHandler) chooseSystemUser(systemUsers []model.SystemUser) model.SystemUser {
+func (h *handler) chooseSystemUser(systemUsers []model.SystemUser) model.SystemUser {
 	length := len(systemUsers)
 	switch length {
 	case 0:
@@ -237,7 +268,7 @@ func (h *interactiveHandler) chooseSystemUser(systemUsers []model.SystemUser) mo
 	return displaySystemUsers[0]
 }
 
-func (h *interactiveHandler) displayAssets(assets model.AssetList) {
+func (h *handler) displayAssets(assets model.AssetList) {
 	if len(assets) == 0 {
 		_, _ = io.WriteString(h.term, i18n.T("No Assets")+"\n\r")
 	} else {
@@ -257,7 +288,7 @@ func (h *interactiveHandler) displayAssets(assets model.AssetList) {
 	}
 }
 
-func (h *interactiveHandler) displayNodes(nodes []model.Node) {
+func (h *handler) displayNodes(nodes []model.Node) {
 	tree := ConstructAssetNodeTree(nodes)
 	tipHeaderMsg := i18n.T("Node: [ ID.Name(Asset amount) ]")
 	tipEndMsg := i18n.T("Tips: Enter g+NodeID to display the host under the node, such as g1")
@@ -271,7 +302,7 @@ func (h *interactiveHandler) displayNodes(nodes []model.Node) {
 
 }
 
-func (h *interactiveHandler) refreshAssetsAndNodesData() {
+func (h *handler) refreshAssetsAndNodesData() {
 	switch h.assetLoadPolicy {
 	case "all":
 		h.loadAllAssets()
@@ -283,15 +314,15 @@ func (h *interactiveHandler) refreshAssetsAndNodesData() {
 	}
 }
 
-func (h *interactiveHandler) loadUserNodes(cachePolicy string) {
+func (h *handler) loadUserNodes(cachePolicy string) {
 	h.nodes = service.GetUserNodes(h.user.ID, cachePolicy)
 }
 
-func (h *interactiveHandler) loadAllAssets() {
+func (h *handler) loadAllAssets() {
 	h.allAssets = service.GetUserAllAssets(h.user.ID)
 }
 
-func (h *interactiveHandler) searchAsset(key string) {
+func (h *handler) searchAsset(key string) {
 	switch h.assetLoadPolicy {
 	case "all":
 		<-h.loadDataDone
@@ -316,7 +347,7 @@ func (h *interactiveHandler) searchAsset(key string) {
 	}
 }
 
-func (h *interactiveHandler) searchAssetOrProxy(key string) {
+func (h *handler) searchAssetOrProxy(key string) {
 	if indexNum, err := strconv.Atoi(key); err == nil && len(h.searchResult) > 0 {
 		if indexNum > 0 && indexNum <= len(h.searchResult) {
 			assetSelect := h.searchResult[indexNum-1]
@@ -352,7 +383,7 @@ func (h *interactiveHandler) searchAssetOrProxy(key string) {
 	}
 }
 
-func (h *interactiveHandler) searchNodeAssets(num int) (assets model.AssetList) {
+func (h *handler) searchNodeAssets(num int) (assets model.AssetList) {
 	if num > len(h.nodes) || num == 0 {
 		return assets
 	}
@@ -361,7 +392,7 @@ func (h *interactiveHandler) searchNodeAssets(num int) (assets model.AssetList) 
 	return
 }
 
-func (h *interactiveHandler) ProxyAsset(assetSelect model.Asset) {
+func (h *handler) ProxyAsset(assetSelect model.Asset) {
 	systemUsers := service.GetUserAssetSystemUsers(h.user.ID, assetSelect.ID)
 	systemUserSelect := h.chooseSystemUser(systemUsers)
 	h.systemUserSelect = &systemUserSelect
@@ -369,16 +400,20 @@ func (h *interactiveHandler) ProxyAsset(assetSelect model.Asset) {
 	h.Proxy(context.Background())
 }
 
-func (h *interactiveHandler) Proxy(ctx context.Context) {
+func (h *handler) Proxy(ctx context.Context) {
 	p := proxy.ProxyServer{
 		UserConn:   h.sess,
 		User:       h.user,
 		Asset:      h.assetSelect,
 		SystemUser: h.systemUserSelect,
 	}
-	h.pauseWatchWinSize()
-	p.Proxy()
-	h.resumeWatchWinSize()
+	if h.interactive {
+		h.pauseWatchWinSize()
+		p.Proxy()
+		h.resumeWatchWinSize()
+	} else {
+		p.Proxy()
+	}
 }
 
 func ConstructAssetNodeTree(assetNodes []model.Node) treeprint.Tree {

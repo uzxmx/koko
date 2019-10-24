@@ -12,6 +12,7 @@
 *.out
 data/
 log/
+logs/
 .idea/
 vendor/
 config.yml

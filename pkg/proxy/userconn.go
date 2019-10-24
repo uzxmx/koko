@@ -13,4 +13,6 @@ type UserConnection interface {
 	LoginFrom() string
 	RemoteAddr() string
 	Pty() ssh.Pty
+	IsInteractive() bool
+	Session() ssh.Session
 }

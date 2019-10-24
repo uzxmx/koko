@@ -80,3 +80,11 @@ func (c *Client) SetWinSize(size ssh.Window) {
 func (c *Client) ID() string {
 	return c.Uuid
 }
+
+func (c *Client) IsInteractive() bool {
+	return true
+}
+
+func (c *Client) Session() ssh.Session {
+	return nil
+}

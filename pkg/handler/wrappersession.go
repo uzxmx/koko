@@ -11,11 +11,12 @@ import (
 )
 
 type WrapperSession struct {
-	Uuid      string
-	Sess      ssh.Session
-	inWriter  io.WriteCloser
-	outReader io.ReadCloser
-	mux       *sync.RWMutex
+	Uuid        string
+	Sess        ssh.Session
+	inWriter    io.WriteCloser
+	outReader   io.ReadCloser
+	mux         *sync.RWMutex
+	interactive bool
 }
 
 func (w *WrapperSession) initial() {
@@ -99,10 +100,19 @@ func (w *WrapperSession) ID() string {
 	return w.Uuid
 }
 
-func NewWrapperSession(sess ssh.Session) *WrapperSession {
+func (w *WrapperSession) IsInteractive() bool {
+	return w.interactive
+}
+
+func (w *WrapperSession) Session() ssh.Session {
+	return w.Sess
+}
+
+func NewWrapperSession(sess ssh.Session, interactive bool) *WrapperSession {
 	w := &WrapperSession{
-		Sess: sess,
-		mux:  new(sync.RWMutex),
+		Sess:        sess,
+		mux:         new(sync.RWMutex),
+		interactive: interactive,
 	}
 	w.initial()
 	return w

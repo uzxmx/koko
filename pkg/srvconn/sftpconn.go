@@ -27,8 +27,11 @@ func NewUserSFTP(user *model.User, addr string, assets ...model.Asset) *UserSftp
 }
 
 type UserSftp struct {
-	User *model.User
-	Addr string
+	User        *model.User
+	Addr        string
+	Interactive bool
+	Asset       *model.Asset
+	SystemUser  *model.SystemUser
 
 	RootPath        string
 	ShowHidden      bool
@@ -378,9 +381,19 @@ func (u *UserSftp) Symlink(oldNamePath, newNamePath string) error {
 }
 
 func (u *UserSftp) Create(path string) (*sftp.File, error) {
-	req := u.ParsePath(path)
-	if req.host == "" {
-		return nil, sftp.ErrSshFxPermissionDenied
+	var req requestMessage
+
+	if u.Interactive {
+		req = u.ParsePath(path)
+		if req.host == "" {
+			return nil, sftp.ErrSshFxPermissionDenied
+		}
+	} else {
+		req = requestMessage{
+			host:  u.Asset.Hostname,
+			su:    u.SystemUser.Name,
+			dpath: path,
+		}
 	}
 	host, ok := u.hosts[req.host]
 	if !ok {
@@ -499,11 +512,15 @@ func (u *UserSftp) GetSFTPAndRealPath(req requestMessage) (conn *SftpConn, realP
 				u.sftpClients[key] = conn
 			}
 
-			switch strings.ToLower(u.RootPath) {
-			case "home", "~", "":
-				realPath = filepath.Join(conn.HomeDirPath, strings.TrimPrefix(req.dpath, "/"))
-			default:
-				realPath = filepath.Join(u.RootPath, strings.TrimPrefix(req.dpath, "/"))
+			if u.Interactive {
+				switch strings.ToLower(u.RootPath) {
+				case "home", "~", "":
+					realPath = filepath.Join(conn.HomeDirPath, strings.TrimPrefix(req.dpath, "/"))
+				default:
+					realPath = filepath.Join(u.RootPath, strings.TrimPrefix(req.dpath, "/"))
+				}
+			} else {
+				realPath = req.dpath
 			}
 			return conn, realPath
 		}
@@ -661,7 +678,7 @@ func (h *HostnameDir) HasUniqueSu() (string, bool) {
 }
 
 func (h *HostnameDir) GetSystemUsers() (sus []model.SystemUser) {
-	sus = make([] model.SystemUser, 0, len(h.suMaps))
+	sus = make([]model.SystemUser, 0, len(h.suMaps))
 	for _, item := range h.suMaps {
 		sus = append(sus, *item)
 	}

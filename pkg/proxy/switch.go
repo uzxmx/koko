@@ -227,3 +227,14 @@ func LoopRead(read io.Reader, inChan chan<- []byte) {
 	}
 	close(inChan)
 }
+
+func LoopWrite(writer io.Writer, inChan <-chan []byte, exitChan chan<- bool) {
+	for {
+		buf, ok := <-inChan
+		if !ok {
+			exitChan <- true
+			return
+		}
+		writer.Write(buf)
+	}
+}

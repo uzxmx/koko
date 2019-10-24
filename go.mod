@@ -39,7 +39,7 @@ require (
 )
 
 replace (
-	github.com/gliderlabs/ssh v0.2.3-0.20190711180243-866d0ddf7991 => github.com/ibuler/ssh v0.1.6-0.20191022095544-d805cc9f27a8
+	github.com/gliderlabs/ssh v0.2.3-0.20190711180243-866d0ddf7991 => github.com/uzxmx/ssh v0.1.6-0.20191024033516-c1b9d91b9a32
 	github.com/pkg/sftp v1.10.0 => github.com/LeeEirc/sftp v1.10.2
 	golang.org/x/crypto v0.0.0-20190820162420-60c769a6c586 => github.com/ibuler/crypto v0.0.0-20190715092645-911d13b3bf6e
 )

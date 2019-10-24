@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	gossh "golang.org/x/crypto/ssh"
+
 	"github.com/jumpserver/koko/pkg/config"
 	"github.com/jumpserver/koko/pkg/i18n"
 	"github.com/jumpserver/koko/pkg/logger"
@@ -105,7 +107,7 @@ func (p *ProxyServer) getSSHConn() (srvConn *srvconn.ServerSSHConnection, err er
 		ReuseConnection: conf.ReuseConnection,
 		CloseOnce:       new(sync.Once),
 	}
-	err = srvConn.Connect(pty.Window.Height, pty.Window.Width, pty.Term)
+	err = srvConn.Connect(p.UserConn.IsInteractive(), pty.Window.Height, pty.Window.Width, pty.Term)
 	return
 }
 
@@ -137,12 +139,14 @@ func (p *ProxyServer) getServerConn() (srvConn srvconn.ServerConnection, err err
 	if err != nil {
 		return
 	}
-	done := make(chan struct{})
-	defer func() {
-		utils.IgnoreErrWriteString(p.UserConn, "\r\n")
-		close(done)
-	}()
-	go p.sendConnectingMsg(done, config.GetConf().SSHTimeout*time.Second)
+	if p.UserConn.IsInteractive() {
+		done := make(chan struct{})
+		defer func() {
+			utils.IgnoreErrWriteString(p.UserConn, "\r\n")
+			close(done)
+		}()
+		go p.sendConnectingMsg(done, config.GetConf().SSHTimeout*time.Second)
+	}
 	if p.SystemUser.Protocol == "telnet" {
 		return p.getTelnetConn()
 	} else {
@@ -215,7 +219,7 @@ func (p *ProxyServer) Proxy() {
 	// 创建Session
 	sw, err := CreateSession(p)
 	if err != nil {
-		logger.Errorf("Request %s: Create session failed: %s",p.UserConn.ID(), err.Error())
+		logger.Errorf("Request %s: Create session failed: %s", p.UserConn.ID(), err.Error())
 		return
 	}
 	defer RemoveSession(sw)
@@ -225,6 +229,49 @@ func (p *ProxyServer) Proxy() {
 		p.sendConnectErrorMsg(err)
 		return
 	}
+
+	if !p.UserConn.IsInteractive() {
+		sess := p.UserConn.Session()
+		sshConn, ok := srvConn.(*srvconn.ServerSSHConnection)
+		if sess != nil && ok {
+			stdout, _ := sshConn.Session().StdoutPipe()
+			stderr, _ := sshConn.Session().StderrPipe()
+			stdoutChan := make(chan []byte, 1024)
+			stderrChan := make(chan []byte, 1024)
+			go LoopRead(stdout, stdoutChan)
+			go LoopRead(stderr, stderrChan)
+
+			exitStatusChan := make(chan int)
+
+			go func() {
+				stdoutExitChan := make(chan bool)
+				stderrExitChan := make(chan bool)
+				go LoopWrite(sess, stdoutChan, stdoutExitChan)
+				go LoopWrite(sess.Stderr(), stderrChan, stderrExitChan)
+
+				<-stdoutExitChan
+				<-stderrExitChan
+
+				exitStatus := 0
+				select {
+				case exitStatus = <-exitStatusChan:
+				case <-time.After(3 * time.Second):
+				}
+				sess.Exit(exitStatus)
+			}()
+
+			exitStatus := 0
+			if err := sshConn.Session().Run(sess.RawCommand()); err != nil {
+				exitError, ok := err.(*gossh.ExitError)
+				if ok {
+					exitStatus = exitError.Waitmsg.ExitStatus()
+				}
+			}
+			exitStatusChan <- exitStatus
+			return
+		}
+	}
+
 	logger.Infof("Session %s bridge start", sw.ID)
 	_ = sw.Bridge(p.UserConn, srvConn)
 	logger.Infof("Session %s bridge end", sw.ID)

@@ -23,7 +23,7 @@ func SftpHandler(sess ssh.Session) {
 	ctx, cancel := cctx.NewContext(sess)
 	defer cancel()
 	host, _, _ := net.SplitHostPort(sess.RemoteAddr().String())
-	userSftp := NewSFTPHandler(ctx.User(), host)
+	userSftp := NewSFTPHandler(sess, ctx.User(), host)
 	handlers := sftp.Handlers{
 		FileGet:  userSftp,
 		FilePut:  userSftp,
@@ -34,7 +34,7 @@ func SftpHandler(sess ssh.Session) {
 	logger.Infof("SFTP request %s: Handler start", reqID)
 	req := sftp.NewRequestServer(sess, handlers)
 	if err := req.Serve(); err == io.EOF {
-		logger.Debug("SFTP request %s: Exited session.", reqID)
+		logger.Debugf("SFTP request %s: Exited session.", reqID)
 	} else if err != nil {
 		logger.Errorf("SFTP request %s: Server completed with error %s", reqID, err)
 	}
@@ -43,9 +43,24 @@ func SftpHandler(sess ssh.Session) {
 	logger.Infof("SFTP request %s: Handler exit.", reqID)
 }
 
-func NewSFTPHandler(user *model.User, addr string) *sftpHandler {
+func NewSFTPHandler(sess ssh.Session, user *model.User, addr string) *sftpHandler {
 	assets := service.GetUserAllAssets(user.ID)
-	return &sftpHandler{srvconn.NewUserSFTP(user, addr, assets...)}
+	handler := &sftpHandler{srvconn.NewUserSFTP(user, addr, assets...)}
+
+	options := parseSessionEnvironment(sess)
+	interactive := true
+	value, ok := options["Interactive"]
+	if ok {
+		interactive = value != "no"
+	}
+	handler.Interactive = interactive
+	if !interactive {
+		asset, su := getAssetAndSystemUserForNoInteractiveMode(sess, user, options)
+		handler.Asset = asset
+		handler.SystemUser = su
+	}
+
+	return handler
 }
 
 type sftpHandler struct {
